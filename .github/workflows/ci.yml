@@ -33,7 +33,7 @@ jobs:
       - name: Ejecutar tratamiento (preparar.py)
         run: python datos/preparar.py --crudos datos/crudos --salida datos/salida
       - name: Pruebas de datos tratados
-        run: pytest -q datos/tests
+        run: python -m pytest -q datos/tests
       - uses: actions/upload-artifact@v4
         with: { name: datos-tratados, path: datos/salida/, retention-days: 7 }
 
@@ -53,7 +53,7 @@ jobs:
         run: python servicios/ia/entrenar.py --dataset datos/salida/dataset_modelo.csv --salida servicios/ia/modelo
       - name: Pruebas del microservicio de IA
         working-directory: servicios/ia
-        run: pytest -q tests
+        run: python -m pytest -q tests
       - uses: actions/upload-artifact@v4
         with: { name: modelo, path: servicios/ia/modelo/, retention-days: 7 }
 
@@ -78,10 +78,10 @@ jobs:
         with: { name: datos-tratados, path: datos/salida }
       - name: Prueba del servicio de carga (dos ejecuciones, sin duplicar)
         env: { DIR_DATOS: "${{ github.workspace }}/datos/salida" }
-        run: pytest -q servicios/carga/tests
+        run: python -m pytest -q servicios/carga/tests
       - name: Pruebas del microservicio de dominio
         working-directory: servicios/dominio
-        run: pytest -q tests
+        run: python -m pytest -q tests
 
   # 4 · Gateway y front: la configuración de nginx es válida y la página tiene el flujo principal
   gateway-front:
