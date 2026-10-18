@@ -1,0 +1,25 @@
+flowchart TB
+    subgraph pc["Computador de la defensa · Windows + Docker Desktop (linux/amd64)"]
+        nav["Navegador<br/>http://localhost:8080"]
+        subgraph proj["Proyecto compose 'equipo04' · red bridge 'interna'"]
+            gw["gateway · 0,5 CPU · 64 MB<br/>8080:8080"]
+            fr["front · 0,25 CPU · 32 MB"]
+            dom["dominio · 1,0 CPU · 160 MB"]
+            ia1["ia-1 · 0,5 CPU · 256 MB"]
+            ia2["ia-2 · 0,5 CPU · 256 MB"]
+            ca["carga · 0,5 CPU · 128 MB<br/>restart: no"]
+            pg[("db · postgres:16-alpine<br/>1,0 CPU · 256 MB")]
+            vol[("volumen con nombre<br/>datos-pg")]
+        end
+        ghcr["Imágenes :ep2 descargadas de ghcr.io"]
+    end
+    nav --> gw
+    gw --> fr
+    gw --> dom
+    gw --> ia1
+    gw --> ia2
+    dom --> gw
+    dom --> pg
+    ca --> pg
+    pg --- vol
+    ghcr -. "docker compose pull" .-> proj

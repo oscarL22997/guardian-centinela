@@ -1,0 +1,10 @@
+flowchart LR
+    core["Core de pagos"] -- "HTTPS/REST JSON · POST /evaluar · token, nunca PAN · límite 150 ms" --> gc(("Guardián<br/>Centinela"))
+    gc -- "HTTPS/REST JSON · consulta puntual · 900 ms · USD 0,08" --> bureau["Bureau de identidad"]
+    sftp["Proveedor de sanciones"] -- "SFTP · CSV diario" --> gc
+    negras["Listas negras (PostgreSQL)"] -- "ETL / SQL" --> gc
+    gc -- "HTTPS/REST JSON · cola de revisión" --> consola["Consola de analistas"]
+    redshift["Redshift"] -- "SQL · extracción nocturna" --> gc
+    gc -- "S3 API · Object Lock (WORM)" --> s3["Archivo de auditoría"]
+    gc -- "syslog/agente" --> siem["SIEM"]
+    riesgo["Riesgo"] -- "HTTPS · POST /umbrales (X-Api-Key)" --> gc

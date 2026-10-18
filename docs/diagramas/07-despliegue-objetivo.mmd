@@ -1,0 +1,35 @@
+flowchart TB
+    core["Core de pagos<br/>(cuenta PCI)"] -- "PrivateLink / HTTPS" --> alb
+    nav["Consola de analistas"] -- "HTTPS" --> waf
+    subgraph aws["AWS us-east-1 · cuenta no-PCI (RT1)"]
+        waf["AWS WAF"] --> alb
+        subgraph vpc["VPC 10.0.0.0/16"]
+            alb["Application Load Balancer<br/>health check /health cada 10 s"]
+            subgraph aza["Zona de disponibilidad A · subred privada"]
+                d1["ECS Fargate · dominio<br/>0,5 vCPU / 1 GB"]
+                i1["ECS Fargate · ia<br/>0,5 vCPU / 1 GB"]
+                f1["ECS Fargate · front"]
+                rdsP[("RDS PostgreSQL<br/>primaria db.t4g.medium")]
+                rc1[("ElastiCache Redis<br/>primario · feature store")]
+            end
+            subgraph azb["Zona de disponibilidad B · subred privada"]
+                d2["ECS Fargate · dominio<br/>0,5 vCPU / 1 GB"]
+                i2["ECS Fargate · ia<br/>0,5 vCPU / 1 GB"]
+                f2["ECS Fargate · front"]
+                rdsS[("RDS standby síncrona<br/>Multi-AZ")]
+                rc2[("ElastiCache réplica")]
+            end
+        end
+        sc["ECS Service Connect<br/>(balanceo dominio → ia)"]
+        s3[("S3 Object Lock (WORM)<br/>auditoría 7 años")]
+        cw["CloudWatch + Managed Prometheus/Grafana<br/>alarmas"]
+        ecr["Imágenes :ep2/:sha (GHCR → ECR)"]
+    end
+    alb --> d1 & d2 & f1 & f2
+    d1 & d2 --> sc --> i1 & i2
+    d1 & d2 --> rdsP
+    d1 & d2 --> rc1
+    rdsP -. "replicación síncrona" .-> rdsS
+    rc1 -. "replicación" .-> rc2
+    d1 & d2 -. "lote cada 1 min" .-> s3
+    ecr -.-> d1 & i1

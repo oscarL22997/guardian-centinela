@@ -1,0 +1,19 @@
+flowchart LR
+    usuario["Navegador del usuario<br/>(analista / riesgo)"]
+    subgraph host["compose.yaml · red interna 'interna'"]
+        gateway["gateway<br/>nginx 1.28<br/>:8080 (único puerto publicado)"]
+        front["front<br/>nginx 1.28 · HTML/JS<br/>:80"]
+        dominio["dominio<br/>Python 3.12 · FastAPI<br/>:8000"]
+        ia1["ia (réplica 1)<br/>FastAPI · XGBoost<br/>:8000"]
+        ia2["ia (réplica 2)<br/>FastAPI · XGBoost<br/>:8000"]
+        db[("db<br/>PostgreSQL 16<br/>volumen datos-pg")]
+        carga["carga<br/>Python 3.12 · psycopg<br/>(se ejecuta una vez)"]
+    end
+    usuario -- "HTTP :8080" --> gateway
+    gateway -- "HTTP · /  → :80" --> front
+    gateway -- "HTTP/REST · /api/dominio/* → :8000" --> dominio
+    gateway -- "HTTP/REST · /api/ia/* → round-robin" --> ia1
+    gateway -- "HTTP/REST · /api/ia/* → round-robin" --> ia2
+    dominio -- "HTTP/REST · POST /api/ia/predict" --> gateway
+    dominio -- "SQL · TCP 5432" --> db
+    carga -- "SQL · COPY + INSERT ON CONFLICT · TCP 5432" --> db
