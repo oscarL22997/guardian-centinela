@@ -1,0 +1,16 @@
+flowchart TB
+    subgraph git["1 · Gitflow mínimo en GitHub"]
+        direction LR
+        f["feat/&lt;descripción&gt;<br/>(una funcionalidad)"] -- "PR: CI corre<br/>tests + build" --> dev["dev<br/>(integración)"] -- "PR dev → main" --> main["main protegida<br/>CI publica sha-xxxx + latest"] -- "git tag ep2" --> tag["tag ep2<br/>CI publica :ep2"]
+    end
+    subgraph ci["2 · GitHub Actions (.github/workflows/ci.yml)"]
+        direction LR
+        j1["datos<br/>preparar.py + pytest"] --> j2["ia-modelo<br/>entrenar.py<br/>compuerta PR-AUC ≥ 0,70"] --> j5["imagenes ×5<br/>buildx linux/amd64<br/>label revision = commit"]
+        j1 --> j3["dominio-carga<br/>Postgres de servicio<br/>carga ×2 + pytest"] --> j5
+        j4["gateway-front<br/>nginx -t"] --> j5
+    end
+    subgraph run["3 · Defensa"]
+        direction LR
+        ghcr[("ghcr.io/&lt;usuario&gt;/gc-*:ep2<br/>públicas")] --> compose["compose.yaml<br/>pull + up -d"]
+    end
+    git --> ci --> run

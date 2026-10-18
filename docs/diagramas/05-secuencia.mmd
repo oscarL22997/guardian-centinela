@@ -1,0 +1,34 @@
+sequenceDiagram
+    autonumber
+    actor U as Analista (navegador)
+    participant F as front
+    participant G as gateway (nginx)
+    participant D as dominio
+    participant DB as PostgreSQL
+    participant I1 as ia réplica 1
+    participant I2 as ia réplica 2
+    U->>F: GET / (vía gateway :8080)
+    U->>G: POST /api/dominio/evaluar {usuario, monto, canal, mcc...}
+    G->>D: POST /evaluar
+    D->>DB: umbrales vigentes, usuario, dispositivo, lista negra, velocidad
+    DB-->>D: contexto
+    D->>G: POST /api/ia/predict (variables)
+    alt camino normal
+        G->>I1: round-robin
+        I1-->>G: 200 {probabilidad, razones, versión}
+    else réplica 1 caída
+        G-xI1: conexión rechazada (502)
+        G->>I2: proxy_next_upstream: reintento en la otra réplica
+        I2-->>G: 200 {probabilidad, razones, versión}
+    end
+    alt IA responde a tiempo
+        G-->>D: 200
+        D->>D: reglas duras mandan · umbrales → decisión
+    else IA tarda más de 300 ms o las dos réplicas caídas
+        G-->>D: 503 servicio_no_disponible / timeout
+        D->>D: política de reserva de riesgo (reglas · aprobar · bloquear)
+    end
+    D->>DB: INSERT predicciones (entrada, decisión, versión modelo, versión umbrales, fecha)
+    D-->>G: 200 {decisión, razones, origen, latencia}
+    G-->>U: 200 JSON
+    U->>F: muestra decisión y razones ordenadas por peso

@@ -1,0 +1,145 @@
+# Guardián Centinela · integración continua (EP2)
+#
+#  Pull request hacia dev o main -> pruebas + build de cada imagen SIN publicar (si falla, no se integra)
+#  Push a main (merge desde dev)  -> pruebas + build + publicación en GHCR con tags sha-<commit> y latest
+#  Tag ep2 sobre main             -> misma imagen publicada con el tag ep2 (la que usa compose.yaml)
+name: ci
+
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [main]
+    tags: ["ep2"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  PYTHON_VERSION: "3.12"
+  UMBRAL_PR_AUC: "0.70"   # compuerta del modelo (RF11): si el PR-AUC de prueba baja de esto, no hay imagen de IA
+
+jobs:
+  # 1 · Tratamiento de datos: perfila, limpia, integra y prueba que las tablas no tengan nulos ni duplicados en claves
+  datos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}", cache: pip }
+      - run: pip install -r datos/requirements.txt
+      - name: Ejecutar tratamiento (preparar.py)
+        run: python datos/preparar.py --crudos datos/crudos --salida datos/salida
+      - name: Pruebas de datos tratados
+        run: pytest -q datos/tests
+      - uses: actions/upload-artifact@v4
+        with: { name: datos-tratados, path: datos/salida/, retention-days: 7 }
+
+  # 2 · Modelo: entrena, aplica la compuerta de métrica y prueba /predict
+  ia-modelo:
+    needs: datos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}", cache: pip }
+      - run: pip install -r servicios/ia/requirements-train.txt
+      - uses: actions/download-artifact@v4
+        with: { name: datos-tratados, path: datos/salida }
+      - name: Entrenar y verificar compuerta (entrenar.py)
+        env: { GIT_SHA: "${{ github.sha }}" }
+        run: python servicios/ia/entrenar.py --dataset datos/salida/dataset_modelo.csv --salida servicios/ia/modelo
+      - name: Pruebas del microservicio de IA
+        working-directory: servicios/ia
+        run: pytest -q tests
+      - uses: actions/upload-artifact@v4
+        with: { name: modelo, path: servicios/ia/modelo/, retention-days: 7 }
+
+  # 3 · Dominio y carga contra PostgreSQL real (carga idempotente + flujo /evaluar)
+  dominio-carga:
+    needs: datos
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_DB: centinela, POSTGRES_USER: centinela, POSTGRES_PASSWORD: centinela }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U centinela" --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://centinela:centinela@localhost:5432/centinela
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ env.PYTHON_VERSION }}", cache: pip }
+      - run: pip install -r servicios/dominio/requirements-test.txt -r servicios/carga/requirements.txt
+      - uses: actions/download-artifact@v4
+        with: { name: datos-tratados, path: datos/salida }
+      - name: Prueba del servicio de carga (dos ejecuciones, sin duplicar)
+        env: { DIR_DATOS: "${{ github.workspace }}/datos/salida" }
+        run: pytest -q servicios/carga/tests
+      - name: Pruebas del microservicio de dominio
+        working-directory: servicios/dominio
+        run: pytest -q tests
+
+  # 4 · Gateway y front: la configuración de nginx es válida y la página tiene el flujo principal
+  gateway-front:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: nginx -t sobre la imagen del gateway
+        run: |
+          docker build -t gw-test servicios/gateway
+          docker run --rm --add-host front:127.0.0.1 --add-host dominio:127.0.0.1 --add-host ia:127.0.0.1 gw-test nginx -t
+      - name: El front llama al dominio a través del gateway
+        run: |
+          grep -q 'const API = "/api/dominio"' servicios/front/index.html
+          grep -q '/evaluar' servicios/front/index.html
+
+  # 5 · Imágenes: build siempre; push solo en main y en el tag ep2
+  imagenes:
+    needs: [ia-modelo, dominio-carga, gateway-front]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        servicio: [gateway, front, dominio, ia, carga]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Modelo entrenado dentro del contexto de la imagen de IA
+        if: matrix.servicio == 'ia'
+        uses: actions/download-artifact@v4
+        with: { name: modelo, path: servicios/ia/modelo }
+      - name: Tablas tratadas dentro del contexto de la imagen de carga
+        if: matrix.servicio == 'carga'
+        uses: actions/download-artifact@v4
+        with: { name: datos-tratados, path: servicios/carga/datos }
+      - name: Quitar del contexto de carga lo que no es tabla de carga
+        if: matrix.servicio == 'carga'
+        run: rm -f servicios/carga/datos/dataset_modelo.csv servicios/carga/datos/perfilado.json
+      - name: Nombre del registro en minúsculas
+        run: echo "REGISTRO=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.event_name == 'push'
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ secrets.GITHUB_TOKEN }}" }
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRO }}/gc-${{ matrix.servicio }}
+          tags: |
+            type=sha,format=short,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=tag
+          labels: |
+            org.opencontainers.image.title=gc-${{ matrix.servicio }}
+            org.opencontainers.image.description=Guardián Centinela · ${{ matrix.servicio }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: servicios/${{ matrix.servicio }}
+          platforms: linux/amd64
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false

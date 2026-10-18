@@ -1,0 +1,28 @@
+flowchart LR
+    subgraph entradas["Fuentes (entran al sistema)"]
+        direction TB
+        riesgo["Gerencia de riesgo<br/>(Ignacia Bravo)"]
+        sanciones["Listas de sanciones<br/>internacionales"]
+        negras["Listas negras internas"]
+        redshift["Redshift<br/>(data warehouse)"]
+    end
+    core["Core de pagos<br/>(Kotlin · entorno PCI)"]
+    motor["Motor de reglas legado<br/>(Java, 240 reglas)"]
+    gc(("Guardián Centinela<br/>detección de fraude<br/>explicable y auditable"))
+    subgraph salidas["Consumidores"]
+        direction TB
+        analistas["Analistas de fraude<br/>(cola de revisión existente)"]
+        bureau["Bureau de identidad<br/>(externo)"]
+        auditor["Auditor externo / CMF<br/>(Carolina Herrera)"]
+        siem["SIEM (seguridad)"]
+    end
+    core <== "1 · transacción tokenizada ⇄ decisión + razones" ==> gc
+    core -. "2 · sin respuesta en 100 ms" .-> motor
+    riesgo -- "umbrales versionados" --> gc
+    sanciones -- "archivo diario" --> gc
+    negras -- "entradas vetadas" --> gc
+    redshift -- "historial etiquetado" --> gc
+    gc <-- "casos priorizados ⇄ etiqueta" --> analistas
+    gc -- "solo casos dudosos" --> bureau
+    gc -- "decisiones 7 años" --> auditor
+    gc -- "logs" --> siem
