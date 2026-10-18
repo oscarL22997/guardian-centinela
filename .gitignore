@@ -11,3 +11,10 @@ servicios/carga/datos/*
 !servicios/ia/modelo/.gitkeep
 !servicios/carga/datos/.gitkeep
 !datos/salida/.gitkeep
+
+# Documentos de entrega: se envian por AVA
+docs/*.docx
+docs/*.pdf
+docs/GUIA*.md
+docs/generar_doc.js
+docs/paginas.*
