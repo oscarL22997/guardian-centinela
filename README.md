@@ -25,7 +25,7 @@ Al terminar: `docker compose -p equipo04 down -v`
 | db | — | `postgres:16-alpine` | Base con volumen `datos-pg` |
 
 Tratamiento de datos: `datos/preparar.py` (crudos en `datos/crudos/`). Entrenamiento: `servicios/ia/entrenar.py`.
-Pipeline: `.github/workflows/ci.yml`. Documento arc42 y diagramas Mermaid: `docs/`.
+Pipeline: `.github/workflows/ci.yml`. Diagramas Mermaid: `docs/diagramas/`.
 
 ## Desarrollo local sin Docker
 
