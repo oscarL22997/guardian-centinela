@@ -27,17 +27,6 @@ Al terminar: `docker compose -p equipo04 down -v`
 Tratamiento de datos: `datos/preparar.py` (crudos en `datos/crudos/`). Entrenamiento: `servicios/ia/entrenar.py`.
 Pipeline: `.github/workflows/ci.yml`. Diagramas Mermaid: `docs/diagramas/`.
 
-## Desarrollo local sin Docker
-
-```bash
-pip install -r datos/requirements.txt -r servicios/ia/requirements-train.txt -r servicios/dominio/requirements-test.txt
-python datos/preparar.py                     # perfila, limpia, integra -> datos/salida/
-python servicios/ia/entrenar.py              # entrena + compuerta -> servicios/ia/modelo/
-pytest -q datos/tests && (cd servicios/ia && pytest -q tests)
-# con un PostgreSQL local:
-export DATABASE_URL=postgresql://centinela:centinela@localhost:5432/centinela DIR_DATOS=$PWD/datos/salida
-python servicios/carga/carga.py && (cd servicios/dominio && pytest -q tests)
-```
 
 ## Endpoints útiles (por el gateway)
 
