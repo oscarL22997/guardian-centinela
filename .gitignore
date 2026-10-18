@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.env
+# Salidas generadas por el pipeline (nunca se suben a mano: las produce preparar.py / entrenar.py)
+datos/salida/*
+servicios/ia/modelo/*
+servicios/carga/datos/*
+*.pkl
+!servicios/ia/modelo/.gitkeep
+!servicios/carga/datos/.gitkeep
+!datos/salida/.gitkeep
