@@ -1,0 +1,63 @@
+erDiagram
+    USUARIOS ||--o{ TRANSACCIONES : "usuario_id (FK lógica)"
+    DISPOSITIVOS ||--o{ TRANSACCIONES : "dispositivo_id (FK)"
+    UMBRALES ||--o{ PREDICCIONES : "version_umbrales (FK)"
+    USUARIOS ||--o{ PREDICCIONES : "usuario_id"
+    LISTA_NEGRA }o..o{ TRANSACCIONES : "tipo+valor (regla dura)"
+    USUARIOS {
+        text usuario_id PK
+        date fecha_registro
+        char pais
+        text segmento
+        smallint nivel_kyc
+        bool verificado
+        int edad_cuenta_dias
+        bool email_desechable
+    }
+    DISPOSITIVOS {
+        text dispositivo_id PK
+        text tipo
+        bool so_inconsistente
+        int usuarios_distintos
+        bool emulador
+    }
+    LISTA_NEGRA {
+        text entrada_id PK
+        text tipo "UNIQUE(tipo,valor)"
+        text valor
+        bool vigente
+        bool vigente_inferido
+    }
+    TRANSACCIONES {
+        text transaccion_id PK
+        text usuario_id
+        text dispositivo_id FK
+        timestamptz ts_utc
+        numeric monto_usd
+        text canal
+        char mcc
+        bool es_fraude "NULL = sin revisar"
+        bool es_reintento
+        int tx_usuario_10min
+    }
+    UMBRALES {
+        serial version PK
+        numeric umbral_revisar
+        numeric umbral_bloquear
+        text politica_reserva
+        text modo
+        text autor
+        text motivo
+    }
+    PREDICCIONES {
+        bigserial prediccion_id PK
+        text transaccion_id
+        jsonb entrada
+        numeric probabilidad
+        text decision
+        text origen
+        jsonb razones
+        text version_modelo
+        int version_umbrales FK
+        timestamptz creado_utc
+    }

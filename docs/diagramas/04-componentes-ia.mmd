@@ -1,0 +1,13 @@
+flowchart TB
+    entrada["POST /predict · JSON desde el dominio (vía gateway)"]
+    archivo[("modelo/ en la imagen<br/>(generado por el pipeline)")]
+    subgraph ia["Microservicio de IA · imagen gc-ia"]
+        direction LR
+        carga_m["0 · Cargador del modelo<br/>modelo.json + metadata.json<br/>al arrancar · /health /modelo /metrics"]
+        val["1 · Validador<br/>Pydantic EntradaPrediccion<br/>422 si no cumple"] --> vec["2 · Vectorizador<br/>features.vectorizar()<br/>= código de entrenar.py"] --> inf["3 · Inferencia<br/>XGBoost Booster"] --> exp["4 · Explicador<br/>TreeSHAP<br/>top 5 por peso"] --> resp["5 · Respuesta<br/>probabilidad · razones<br/>versión · réplica"]
+        carga_m --> inf
+    end
+    salida["200 JSON al dominio"]
+    entrada --> ia
+    archivo --> ia
+    ia --> salida

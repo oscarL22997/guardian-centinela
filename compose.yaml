@@ -1,0 +1,122 @@
+# Guardián Centinela · EP2 · sistema completo en contenedores
+#
+#   docker compose -p equipo04 pull
+#   docker compose -p equipo04 up -d
+#   -> http://localhost:8080
+#
+# Reglas (sección 2.3 del enunciado): solo imágenes publicadas por el pipeline (sin construir nada localmente),
+# imágenes linux/amd64 en GHCR, sin bind mounts, solo el gateway publica puerto (8080),
+# healthcheck y límites de recursos en cada servicio propio, nada secreto.
+# Los límites cpus/mem_limit salen de la medición documentada en el capítulo 7.2.
+
+name: guardian-centinela
+
+services:
+
+  gateway:
+    image: ghcr.io/oscarl22997/gc-gateway:ep2
+    ports:
+      - "8080:8080"                       # único puerto publicado del sistema
+    depends_on:
+      front:   { condition: service_healthy }
+      dominio: { condition: service_healthy }
+      ia:      { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    cpus: 0.50
+    mem_limit: 64m
+    restart: unless-stopped
+    networks: [interna]
+
+  front:
+    image: ghcr.io/oscarl22997/gc-front:ep2
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    cpus: 0.25
+    mem_limit: 32m
+    restart: unless-stopped
+    networks: [interna]
+
+  dominio:
+    image: ghcr.io/oscarl22997/gc-dominio:ep2
+    environment:
+      DATABASE_URL: postgresql://centinela:${POSTGRES_PASSWORD:-centinela_local}@db:5432/centinela
+      IA_URL: http://gateway:8080/api/ia     # la IA se consume a través del gateway (balanceo entre réplicas)
+      IA_TIMEOUT_MS: ${IA_TIMEOUT_MS:-300}
+      RIESGO_API_KEY: ${RIESGO_API_KEY:-}    # vacío = cambio de umbrales deshabilitado
+    depends_on:
+      db:    { condition: service_healthy }
+      carga: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    cpus: 1.00
+    mem_limit: 160m
+    restart: unless-stopped
+    networks: [interna]
+
+  ia:
+    image: ghcr.io/oscarl22997/gc-ia:ep2
+    deploy:
+      replicas: 2                          # el gateway reparte entre las dos (round-robin + reintento)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status==200 else 1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    cpus: 0.50
+    mem_limit: 256m
+    restart: unless-stopped
+    networks: [interna]
+
+  carga:
+    image: ghcr.io/oscarl22997/gc-carga:ep2
+    environment:
+      DATABASE_URL: postgresql://centinela:${POSTGRES_PASSWORD:-centinela_local}@db:5432/centinela
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"                          # corre una vez y termina; ON CONFLICT DO NOTHING evita duplicados
+    healthcheck:
+      test: ["CMD", "python", "-c", "import psycopg"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    cpus: 0.50
+    mem_limit: 128m
+    networks: [interna]
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: centinela
+      POSTGRES_USER: centinela
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-centinela_local}
+    volumes:
+      - datos-pg:/var/lib/postgresql/data  # volumen con nombre (no bind mount)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U centinela -d centinela"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    cpus: 1.00
+    mem_limit: 256m
+    restart: unless-stopped
+    networks: [interna]
+
+volumes:
+  datos-pg:
+
+networks:
+  interna:
+    driver: bridge
